@@ -4,7 +4,7 @@ Technical projects demonstrating data analysis, automation, and systems integrat
 
 ## Projects
 
-### [Hamalytics Power BI Report](./hamalytics-power-bi/)
+### [Hamalytics Power BI Report](./hamalytics/)
 Multi-source analytics dashboard built in 2 days. Dynamic drill-through visuals and DAX modeling.
 
 ### [SQL Query Optimization](./sql-optimization/)
