@@ -1,5 +1,5 @@
 -- ============================================================
--- HEALTHCARE APPOINTMENT ANALYTICS - STAR SCHEMA
+-- HEALTHCARE APPOINTMENT ANALYTICS - STAR SCHEMA (PostgreSQL)
 -- Author: Wes Brown
 -- Purpose: Data warehouse design for appointment analytics
 -- ============================================================
@@ -11,7 +11,7 @@
 -- Dimension: Patients
 -- Contains slowly changing patient demographic information
 CREATE TABLE dim_patients (
-    patient_key INT IDENTITY(1,1) PRIMARY KEY,
+    patient_key SERIAL PRIMARY KEY,
     patient_id VARCHAR(10) NOT NULL UNIQUE,
     age INT,
     gender CHAR(1),
@@ -20,14 +20,14 @@ CREATE TABLE dim_patients (
     chronic_conditions INT,
     distance_to_clinic_miles DECIMAL(5,1),
     -- Audit columns
-    created_date DATETIME DEFAULT GETDATE(),
-    updated_date DATETIME DEFAULT GETDATE()
+    created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Dimension: Clinics
 -- Contains clinic master data
 CREATE TABLE dim_clinics (
-    clinic_key INT IDENTITY(1,1) PRIMARY KEY,
+    clinic_key SERIAL PRIMARY KEY,
     clinic_id VARCHAR(10) NOT NULL UNIQUE,
     clinic_name VARCHAR(100),
     city VARCHAR(50),
@@ -35,7 +35,7 @@ CREATE TABLE dim_clinics (
     total_providers INT,
     specialties_offered VARCHAR(200),
     -- Audit columns
-    created_date DATETIME DEFAULT GETDATE()
+    created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Dimension: Date
@@ -51,8 +51,8 @@ CREATE TABLE dim_date (
     month_name VARCHAR(10),
     quarter INT,
     year INT,
-    is_weekend BIT,
-    is_holiday BIT DEFAULT 0
+    is_weekend BOOLEAN,
+    is_holiday BOOLEAN DEFAULT FALSE
 );
 
 -- Dimension: Time (for appointment times)
@@ -62,7 +62,7 @@ CREATE TABLE dim_time (
     hour INT,
     minute INT,
     time_period VARCHAR(10), -- Morning, Afternoon, Evening
-    business_hour BIT -- 1 if during business hours (8 AM - 5 PM)
+    business_hour BOOLEAN -- TRUE if during business hours (8 AM - 5 PM)
 );
 
 -- ============================================================
@@ -72,7 +72,7 @@ CREATE TABLE dim_time (
 -- Fact: Appointments
 -- Central fact table containing appointment events and metrics
 CREATE TABLE fact_appointments (
-    appointment_key INT IDENTITY(1,1) PRIMARY KEY,
+    appointment_key SERIAL PRIMARY KEY,
     
     -- Foreign keys to dimensions
     patient_key INT NOT NULL,
@@ -91,23 +91,23 @@ CREATE TABLE fact_appointments (
     lead_time_days INT, -- Calculated: appointment_date - scheduled_date
     
     -- Flags for easy filtering
-    is_no_show BIT,
-    is_cancelled BIT,
-    is_completed BIT,
+    is_no_show BOOLEAN,
+    is_cancelled BOOLEAN,
+    is_completed BOOLEAN,
     
     -- Audit
-    loaded_date DATETIME DEFAULT GETDATE(),
+    loaded_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     -- Foreign key constraints
-    CONSTRAINT FK_fact_patient FOREIGN KEY (patient_key) 
+    CONSTRAINT fk_fact_patient FOREIGN KEY (patient_key) 
         REFERENCES dim_patients(patient_key),
-    CONSTRAINT FK_fact_clinic FOREIGN KEY (clinic_key) 
+    CONSTRAINT fk_fact_clinic FOREIGN KEY (clinic_key) 
         REFERENCES dim_clinics(clinic_key),
-    CONSTRAINT FK_fact_appt_date FOREIGN KEY (appointment_date_key) 
+    CONSTRAINT fk_fact_appt_date FOREIGN KEY (appointment_date_key) 
         REFERENCES dim_date(date_key),
-    CONSTRAINT FK_fact_sched_date FOREIGN KEY (scheduled_date_key) 
+    CONSTRAINT fk_fact_sched_date FOREIGN KEY (scheduled_date_key) 
         REFERENCES dim_date(date_key),
-    CONSTRAINT FK_fact_time FOREIGN KEY (appointment_time_key) 
+    CONSTRAINT fk_fact_time FOREIGN KEY (appointment_time_key) 
         REFERENCES dim_time(time_key)
 );
 
@@ -131,20 +131,21 @@ CREATE INDEX idx_fact_status ON fact_appointments(status);
 CREATE INDEX idx_fact_date_clinic ON fact_appointments(appointment_date_key, clinic_key);
 
 -- ============================================================
--- STEP 4: HELPER PROCEDURES
+-- STEP 4: HELPER FUNCTIONS
 -- ============================================================
 
--- Procedure to populate dim_date table
+-- Function to populate dim_date table
 -- Run this once to create 5 years of date records
-CREATE PROCEDURE sp_populate_dim_date
-    @start_date DATE = '2023-01-01',
-    @end_date DATE = '2027-12-31'
-AS
+-- Function to populate dim_date table
+CREATE OR REPLACE FUNCTION populate_dim_date(
+    start_date DATE DEFAULT '2023-01-01',
+    end_date DATE DEFAULT '2027-12-31'
+)
+RETURNS void AS $$
+DECLARE
+    curr_date DATE := start_date;  -- Changed from current_date to curr_date
 BEGIN
-    DECLARE @current_date DATE = @start_date;
-    
-    WHILE @current_date <= @end_date
-    BEGIN
+    WHILE curr_date <= end_date LOOP
         INSERT INTO dim_date (
             date_key,
             full_date,
@@ -159,36 +160,38 @@ BEGIN
             is_weekend
         )
         VALUES (
-            CAST(FORMAT(@current_date, 'yyyyMMdd') AS INT),
-            @current_date,
-            DATEPART(WEEKDAY, @current_date),
-            DATENAME(WEEKDAY, @current_date),
-            DAY(@current_date),
-            DATEPART(WEEK, @current_date),
-            MONTH(@current_date),
-            DATENAME(MONTH, @current_date),
-            DATEPART(QUARTER, @current_date),
-            YEAR(@current_date),
-            CASE WHEN DATEPART(WEEKDAY, @current_date) IN (1, 7) THEN 1 ELSE 0 END
+            TO_CHAR(curr_date, 'YYYYMMDD')::INT,
+            curr_date,
+            EXTRACT(DOW FROM curr_date)::INT,
+            TO_CHAR(curr_date, 'Day'),
+            EXTRACT(DAY FROM curr_date)::INT,
+            EXTRACT(WEEK FROM curr_date)::INT,
+            EXTRACT(MONTH FROM curr_date)::INT,
+            TO_CHAR(curr_date, 'Month'),
+            EXTRACT(QUARTER FROM curr_date)::INT,
+            EXTRACT(YEAR FROM curr_date)::INT,
+            CASE WHEN EXTRACT(DOW FROM curr_date) IN (0, 6) THEN TRUE ELSE FALSE END
         );
         
-        SET @current_date = DATEADD(DAY, 1, @current_date);
-    END
+        curr_date := curr_date + INTERVAL '1 day';
+    END LOOP;
 END;
+$$ LANGUAGE plpgsql;
 
--- Procedure to populate dim_time table
-CREATE PROCEDURE sp_populate_dim_time
-AS
+-- Function to populate dim_time table
+CREATE OR REPLACE FUNCTION populate_dim_time()
+RETURNS void AS $$
+DECLARE
+    hour_val INT := 0;
+    minute_val INT := 0;
+    time_val TIME;
+    time_key_val INT;
 BEGIN
-    DECLARE @hour INT = 0;
-    DECLARE @minute INT = 0;
-    DECLARE @time TIME;
-    
-    WHILE @hour < 24
-    BEGIN
-        WHILE @minute < 60
-        BEGIN
-            SET @time = CAST(FORMAT(@hour, '00') + ':' + FORMAT(@minute, '00') + ':00' AS TIME);
+    WHILE hour_val < 24 LOOP
+        minute_val := 0;
+        WHILE minute_val < 60 LOOP
+            time_val := (LPAD(hour_val::TEXT, 2, '0') || ':' || LPAD(minute_val::TEXT, 2, '0') || ':00')::TIME;
+            time_key_val := hour_val * 100 + minute_val;
             
             INSERT INTO dim_time (
                 time_key,
@@ -199,40 +202,127 @@ BEGIN
                 business_hour
             )
             VALUES (
-                @hour * 100 + @minute,
-                @time,
-                @hour,
-                @minute,
+                time_key_val,
+                time_val,
+                hour_val,
+                minute_val,
                 CASE 
-                    WHEN @hour < 12 THEN 'Morning'
-                    WHEN @hour < 17 THEN 'Afternoon'
+                    WHEN hour_val < 12 THEN 'Morning'
+                    WHEN hour_val < 17 THEN 'Afternoon'
                     ELSE 'Evening'
                 END,
-                CASE WHEN @hour BETWEEN 8 AND 16 THEN 1 ELSE 0 END
+                CASE WHEN hour_val BETWEEN 8 AND 16 THEN TRUE ELSE FALSE END
             );
             
-            SET @minute = @minute + 30; -- 30-minute intervals
-        END;
+            minute_val := minute_val + 30; -- 30-minute intervals
+        END LOOP;
         
-        SET @minute = 0;
-        SET @hour = @hour + 1;
-    END
+        hour_val := hour_val + 1;
+    END LOOP;
 END;
+$$ LANGUAGE plpgsql;
 
 -- ============================================================
--- STEP 5: DATA LOADING TEMPLATE
+-- STEP 5: POPULATE HELPER TABLES
 -- ============================================================
 
--- TODO: Write ETL logic to load data from CSV files
--- Order: 1) Dimensions, 2) Fact table
--- Remember to:
---   - Handle duplicate patient/clinic records
---   - Calculate lead_time_days
---   - Set is_no_show, is_cancelled, is_completed flags
---   - Look up surrogate keys for fact table
+-- Execute these after creating the functions above
+-- SELECT populate_dim_date();
+-- SELECT populate_dim_time();
 
--- Example skeleton for loading appointments:
-/*
+-- Verify the data was loaded:
+-- SELECT COUNT(*) FROM dim_date;  -- Should be ~1826 rows (5 years)
+-- SELECT COUNT(*) FROM dim_time;  -- Should be 48 rows (30-min intervals)
+
+-- ============================================================
+-- STEP 6: DATA LOADING TEMPLATE
+-- ============================================================
+
+-- First, create a staging schema for raw CSV imports
+CREATE SCHEMA IF NOT EXISTS staging;
+
+-- Create staging tables that match your CSV structure exactly
+CREATE TABLE staging.appointments (
+    appointment_id VARCHAR(10),
+    patient_id VARCHAR(10),
+    clinic_id VARCHAR(10),
+    appointment_date DATE,
+    appointment_time TIME,
+    scheduled_date DATE,
+    status VARCHAR(20),
+    appointment_type VARCHAR(30),
+    duration_minutes INT
+);
+
+CREATE TABLE staging.patients (
+    patient_id VARCHAR(10),
+    age INT,
+    gender CHAR(1),
+    zip_code VARCHAR(10),
+    insurance_type VARCHAR(20),
+    chronic_conditions INT,
+    distance_to_clinic_miles DECIMAL(5,1)
+);
+
+CREATE TABLE staging.clinics (
+    clinic_id VARCHAR(10),
+    clinic_name VARCHAR(100),
+    city VARCHAR(50),
+    state CHAR(2),
+    total_providers INT,
+    specialties_offered VARCHAR(200)
+);
+
+-- ============================================================
+-- INSTRUCTIONS FOR CSV IMPORT (Do this in DataGrip):
+-- ============================================================
+-- 1. Right-click on staging.patients table → Import Data from File
+-- 2. Select patients.csv
+-- 3. Map columns (should auto-detect)
+-- 4. Click "Import"
+-- 5. Repeat for staging.clinics and staging.appointments
+-- ============================================================
+
+-- After CSV import, load dimension tables
+-- Load dim_patients
+INSERT INTO dim_patients (
+    patient_id,
+    age,
+    gender,
+    zip_code,
+    insurance_type,
+    chronic_conditions,
+    distance_to_clinic_miles
+)
+SELECT 
+    patient_id,
+    age,
+    gender,
+    zip_code,
+    insurance_type,
+    chronic_conditions,
+    distance_to_clinic_miles
+FROM staging.patients;
+
+-- Load dim_clinics
+INSERT INTO dim_clinics (
+    clinic_id,
+    clinic_name,
+    city,
+    state,
+    total_providers,
+    specialties_offered
+)
+SELECT 
+    clinic_id,
+    clinic_name,
+    city,
+    state,
+    total_providers,
+    specialties_offered
+FROM staging.clinics;
+
+-- Load fact_appointments (with surrogate key lookups)
 INSERT INTO fact_appointments (
     patient_key,
     clinic_key,
@@ -254,43 +344,99 @@ SELECT
     ad.date_key AS appointment_date_key,
     sd.date_key AS scheduled_date_key,
     t.time_key,
-    source.appointment_id,
-    source.appointment_type,
-    source.status,
-    source.duration_minutes,
-    DATEDIFF(DAY, source.scheduled_date, source.appointment_date) AS lead_time_days,
-    CASE WHEN source.status = 'no_show' THEN 1 ELSE 0 END,
-    CASE WHEN source.status = 'cancelled' THEN 1 ELSE 0 END,
-    CASE WHEN source.status = 'completed' THEN 1 ELSE 0 END
-FROM staging.appointments source
-INNER JOIN dim_patients p ON source.patient_id = p.patient_id
-INNER JOIN dim_clinics c ON source.clinic_id = c.clinic_id
-INNER JOIN dim_date ad ON source.appointment_date = ad.full_date
-INNER JOIN dim_date sd ON source.scheduled_date = sd.full_date
-INNER JOIN dim_time t ON source.appointment_time = t.time_value;
-*/
+    sa.appointment_id,
+    sa.appointment_type,
+    sa.status,
+    sa.duration_minutes,
+    sa.appointment_date - sa.scheduled_date AS lead_time_days,
+    CASE WHEN sa.status = 'no_show' THEN TRUE ELSE FALSE END,
+    CASE WHEN sa.status = 'cancelled' THEN TRUE ELSE FALSE END,
+    CASE WHEN sa.status = 'completed' THEN TRUE ELSE FALSE END
+FROM staging.appointments sa
+INNER JOIN dim_patients p ON sa.patient_id = p.patient_id
+INNER JOIN dim_clinics c ON sa.clinic_id = c.clinic_id
+INNER JOIN dim_date ad ON sa.appointment_date = ad.full_date
+INNER JOIN dim_date sd ON sa.scheduled_date = sd.full_date
+INNER JOIN dim_time t ON sa.appointment_time = t.time_value;
 
 -- ============================================================
--- STEP 6: ANALYTICAL VIEWS (YOUR TASK 1.3)
+-- STEP 7: ANALYTICAL VIEWS (YOUR TASK 1.3)
 -- ============================================================
-
--- TODO: Create views for common analytical queries
--- Examples:
---   - vw_monthly_no_show_rates
---   - vw_patient_appointment_history
---   - vw_peak_appointment_hours
 
 -- View Example 1: Monthly No-Show Rates by Clinic
-CREATE VIEW vw_monthly_no_show_rates AS
+CREATE OR REPLACE VIEW vw_monthly_no_show_rates AS
 SELECT 
-    -- Your SQL here
-    NULL AS placeholder;
+    c.clinic_name,
+    d.year,
+    d.month_name,
+    COUNT(*) AS total_appointments,
+    SUM(CASE WHEN f.is_no_show THEN 1 ELSE 0 END) AS no_shows,
+    ROUND(
+        100.0 * SUM(CASE WHEN f.is_no_show THEN 1 ELSE 0 END) / COUNT(*),
+        2
+    ) AS no_show_rate_pct
+FROM fact_appointments f
+INNER JOIN dim_clinics c ON f.clinic_key = c.clinic_key
+INNER JOIN dim_date d ON f.appointment_date_key = d.date_key
+GROUP BY c.clinic_name, d.year, d.month_name, d.month_number
+ORDER BY d.year, d.month_number, c.clinic_name;
 
--- View Example 2: Patient History Summary
-CREATE VIEW vw_patient_history AS
+-- View Example 2: Patient Appointment History Summary
+CREATE OR REPLACE VIEW vw_patient_history AS
 SELECT 
-    -- Your SQL here
-    NULL AS placeholder;
+    p.patient_id,
+    p.age,
+    p.insurance_type,
+    COUNT(*) AS total_appointments,
+    SUM(CASE WHEN f.is_completed THEN 1 ELSE 0 END) AS completed_appointments,
+    SUM(CASE WHEN f.is_no_show THEN 1 ELSE 0 END) AS no_shows,
+    SUM(CASE WHEN f.is_cancelled THEN 1 ELSE 0 END) AS cancellations,
+    ROUND(
+        100.0 * SUM(CASE WHEN f.is_no_show THEN 1 ELSE 0 END) / COUNT(*),
+        2
+    ) AS patient_no_show_rate
+FROM dim_patients p
+INNER JOIN fact_appointments f ON p.patient_key = f.patient_key
+GROUP BY p.patient_id, p.age, p.insurance_type
+ORDER BY total_appointments DESC;
+
+-- View Example 3: Peak Appointment Hours by Day of Week
+CREATE OR REPLACE VIEW vw_peak_appointment_hours AS
+SELECT 
+    dd.day_name,
+    dt.hour,
+    dt.time_period,
+    COUNT(*) AS appointment_count,
+    SUM(CASE WHEN f.is_completed THEN 1 ELSE 0 END) AS completed_count,
+    ROUND(
+        100.0 * SUM(CASE WHEN f.is_completed THEN 1 ELSE 0 END) / COUNT(*),
+        2
+    ) AS completion_rate
+FROM fact_appointments f
+INNER JOIN dim_date dd ON f.appointment_date_key = dd.date_key
+INNER JOIN dim_time dt ON f.appointment_time_key = dt.time_key
+GROUP BY dd.day_name, dd.day_of_week, dt.hour, dt.time_period
+ORDER BY dd.day_of_week, dt.hour;
+
+-- ============================================================
+-- VERIFICATION QUERIES
+-- ============================================================
+
+-- Check row counts after loading
+-- SELECT 'dim_patients' AS table_name, COUNT(*) AS row_count FROM dim_patients
+-- UNION ALL
+-- SELECT 'dim_clinics', COUNT(*) FROM dim_clinics
+-- UNION ALL
+-- SELECT 'dim_date', COUNT(*) FROM dim_date
+-- UNION ALL
+-- SELECT 'dim_time', COUNT(*) FROM dim_time
+-- UNION ALL
+-- SELECT 'fact_appointments', COUNT(*) FROM fact_appointments;
+
+-- Check for any failed joins (should return 0)
+-- SELECT COUNT(*) FROM staging.appointments sa
+-- LEFT JOIN dim_patients p ON sa.patient_id = p.patient_id
+-- WHERE p.patient_key IS NULL;
 
 -- ============================================================
 -- NOTES & DESIGN DECISIONS
@@ -299,7 +445,7 @@ SELECT
 -- 1. Star Schema Choice: Chose star over snowflake for simplicity
 --    and query performance. Dimension tables are denormalized.
 --
--- 2. Surrogate Keys: Using IDENTITY columns as surrogate keys
+-- 2. Surrogate Keys: Using SERIAL (auto-increment) as surrogate keys
 --    to protect against source system changes.
 --
 -- 3. Date Dimension: Separate date table enables time-based analysis
@@ -310,5 +456,8 @@ SELECT
 --
 -- 5. Pre-calculated Flags: is_no_show, is_cancelled, is_completed
 --    improve query performance for filtering.
+--
+-- 6. Staging Schema: Keeps raw CSV data separate from warehouse
+--    tables for auditing and troubleshooting.
 --
 -- ============================================================

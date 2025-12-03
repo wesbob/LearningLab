@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SqlDialectMappings">
+    <file url="file://$PROJECT_DIR$/queries/Query.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/queries/createDatabase.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/queries/createDimensions.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/queries/createFactTable.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/queries/createHelperFunctions.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/queries/createIndexes.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/queries/createStaging.sql" dialect="PostgreSQL" />
+    <file url="PROJECT" dialect="PostgreSQL" />
+  </component>
+</project>

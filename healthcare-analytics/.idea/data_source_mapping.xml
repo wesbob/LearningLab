@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="DataSourcePerFileMappings">
+    <file url="file://$PROJECT_DIR$/queries/Query.sql" value="f1b573cc-76e5-4b7a-b9fe-b52f29157562" />
+    <file url="file://$PROJECT_DIR$/queries/createDatabase.sql" value="f1b573cc-76e5-4b7a-b9fe-b52f29157562" />
+    <file url="file://$PROJECT_DIR$/queries/createDimensions.sql" value="f1b573cc-76e5-4b7a-b9fe-b52f29157562" />
+    <file url="file://$PROJECT_DIR$/queries/createFactTable.sql" value="f1b573cc-76e5-4b7a-b9fe-b52f29157562" />
+    <file url="file://$PROJECT_DIR$/queries/createHelperFunctions.sql" value="f1b573cc-76e5-4b7a-b9fe-b52f29157562" />
+    <file url="file://$PROJECT_DIR$/queries/createIndexes.sql" value="f1b573cc-76e5-4b7a-b9fe-b52f29157562" />
+    <file url="file://$PROJECT_DIR$/queries/createStaging.sql" value="f1b573cc-76e5-4b7a-b9fe-b52f29157562" />
+  </component>
+</project>
