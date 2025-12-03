@@ -1,0 +1,6 @@
+clinic_id,clinic_name,city,state,total_providers,specialties_offered
+C01,North Dallas Family Clinic,Dallas,TX,8,general|pediatrics
+C02,Plano Specialist Center,Plano,TX,12,cardiology|orthopedics|neurology
+C03,McKinney Urgent Care,McKinney,TX,5,urgent_care|general
+C04,Frisco Medical Group,Frisco,TX,10,general|dermatology|pediatrics
+C05,Allen Health Center,Allen,TX,7,general|womens_health
