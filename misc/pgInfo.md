@@ -9,3 +9,4 @@ Database Service: postgresql-18
 Command Line Tools Installation Directory: /Library/PostgreSQL/18
 Stack Builder Installation Directory: /Library/PostgreSQL/18
 Installation Log: /tmp/install-postgresql.log
+Test
